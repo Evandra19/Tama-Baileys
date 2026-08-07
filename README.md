@@ -309,6 +309,121 @@ await sock.sendMessage(jid, {
 
 ---
 
+## Contoh Connection, Message Handler, dan Struktur Pesan
+
+Berikut contoh sederhana bagaimana menghubungkan socket, menangani pesan masuk, dan melihat struktur pesan yang diterima dari event.
+
+### 1. Setup Koneksi
+
+```javascript
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@Tamago/baileys');
+
+async function start() {
+  const { state, saveCreds } = await useMultiFileAuthState('session');
+
+  const sock = makeWASocket({
+    auth: state,
+    printQRInTerminal: true,
+    syncFullHistory: false,
+    logger: require('pino')({ level: 'silent' })
+  });
+
+  sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect } = update;
+    if (connection === 'open') {
+      console.log('Terhubung ke WhatsApp');
+    } else if (connection === 'close') {
+      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+      if (shouldReconnect) {
+        start();
+      }
+    }
+  });
+
+  sock.ev.on('creds.update', saveCreds);
+}
+
+start();
+```
+
+### 2. Message Handler
+
+```javascript
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  for (const msg of messages) {
+    if (!msg.message) continue;
+
+    const from = msg.key.remoteJid;
+    const sender = msg.key.participant || msg.key.remoteJid;
+
+    console.log('from:', from);
+    console.log('sender:', sender);
+    console.log('fromMe:', msg.key.fromMe);
+
+    if (msg.key.participant) {
+      console.log('participant:', msg.key.participant);
+    }
+
+    const text = msg.message.conversation
+      || msg.message.extendedTextMessage?.text
+      || '';
+
+    if (text) {
+      await sock.sendMessage(from, { text: `Anda mengirim: ${text}` });
+    }
+  }
+});
+```
+
+### 3. Struktur Pesan yang Sering Dipakai
+
+Saat pesan masuk diproses, biasanya Anda akan melihat objek seperti ini:
+
+```javascript
+{
+  key: {
+    remoteJid: '6281234567890@s.whatsapp.net',
+    fromMe: false,
+    id: 'ABC123',
+    participant: '6281234567890@s.whatsapp.net',
+    participantPn: '6281234567890@s.whatsapp.net',
+    participantAlt: '6281234567890@lid',
+    addressingMode: 'pn'
+  },
+  messageTimestamp: 1712345678,
+  pushName: 'Nama Pengguna',
+  message: {
+    conversation: 'halo'
+  }
+}
+```
+
+### 4. Field Penting yang Perlu Diperhatikan
+
+- `key.remoteJid`: chat tujuan atau sumber chat
+- `key.fromMe`: apakah pesan dikirim dari akun Anda sendiri
+- `key.participant`: participant dari pesan, biasanya untuk grup atau pesan tertentu
+- `key.participantPn`: participant dalam format phone number / PN
+- `key.participantAlt`: participant alternatif dalam format LID
+- `key.addressingMode`: mode addressing yang dipakai (`pn` atau `lid`)
+- `message`: isi pesan aktual, seperti `conversation`, `extendedTextMessage`, `imageMessage`, dll.
+
+### 5. Contoh Saat Mengakses LID/PN Secara Langsung
+
+```javascript
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  for (const msg of messages) {
+    const participant = msg.key.participant;
+    const participantPn = msg.key.participantPn;
+    const participantAlt = msg.key.participantAlt;
+
+    console.log({ participant, participantPn, participantAlt });
+  }
+});
+```
+
+---
+
 ## Kenapa Pilih Tama-Baileys?
 
 ### ✅ Kelebihan
